@@ -1,4 +1,43 @@
+# Dependencies
 frontend/node_modules
+backend/venv
+*.pyc
+__pycache__/
+
+# Build outputs
 frontend/.next
+frontend/out
+
+# Model files (too large for GitHub)
 backend/cardio_chek_tf_detector.keras
 backend/cardio_chek_tf_detector.h5
+backend/*.h5
+backend/*.keras
+*.h5
+*.keras
+
+# Training outputs
+cardio_chek_models/
+runs/
+logs/
+
+# Data files
+*.jpg
+*.jpeg
+*.png
+!frontend/public/*.png
+!frontend/public/*.jpg
+
+# OS files
+.DS_Store
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
