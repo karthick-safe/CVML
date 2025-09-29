@@ -1,2 +1,4 @@
 frontend/node_modules
 frontend/.next
+backend/cardio_chek_tf_detector.keras
+backend/cardio_chek_tf_detector.h5
