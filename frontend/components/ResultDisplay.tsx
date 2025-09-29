@@ -224,32 +224,113 @@ export default function ResultDisplay({ result, onBack, onNewScan }: ResultDispl
       <div className="card p-6 mt-8">
         <h3 className="text-xl font-semibold text-gray-900 mb-4">Result Interpretation</h3>
         <div className="space-y-4">
-          {result.result.toLowerCase() === 'positive' && (
-            <div className="bg-danger-50 border border-danger-200 rounded-lg p-4">
-              <h4 className="font-semibold text-danger-900 mb-2">Positive Result</h4>
-              <p className="text-danger-800">
-                A positive result indicates the presence of the target biomarker. Please consult with a healthcare professional for further evaluation and guidance.
-              </p>
+          {/* Extracted CardioChek Plus Values */}
+        {result.details?.extracted_values && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <h4 className="font-semibold text-blue-900 mb-3">CardioChek Plus Screen Values</h4>
+            <div className="grid grid-cols-2 gap-4">
+              {result.details.extracted_values.cholesterol && (
+                <div className="bg-white p-3 rounded border">
+                  <span className="text-sm font-medium text-gray-600">Cholesterol</span>
+                  <div className="text-lg font-bold text-gray-900">
+                    {result.details.extracted_values.cholesterol} {result.details.extracted_values.units || 'mg/dL'}
+                  </div>
+                </div>
+              )}
+              {result.details.extracted_values.hdl && (
+                <div className="bg-white p-3 rounded border">
+                  <span className="text-sm font-medium text-gray-600">HDL</span>
+                  <div className="text-lg font-bold text-gray-900">
+                    {result.details.extracted_values.hdl} {result.details.extracted_values.units || 'mg/dL'}
+                  </div>
+                </div>
+              )}
+              {result.details.extracted_values.triglycerides && (
+                <div className="bg-white p-3 rounded border">
+                  <span className="text-sm font-medium text-gray-600">Triglycerides</span>
+                  <div className="text-lg font-bold text-gray-900">
+                    {result.details.extracted_values.triglycerides} {result.details.extracted_values.units || 'mg/dL'}
+                  </div>
+                </div>
+              )}
+              {result.details.extracted_values.glucose && (
+                <div className="bg-white p-3 rounded border">
+                  <span className="text-sm font-medium text-gray-600">Glucose</span>
+                  <div className="text-lg font-bold text-gray-900">
+                    {result.details.extracted_values.glucose} {result.details.extracted_values.units || 'mg/dL'}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-          
-          {result.result.toLowerCase() === 'negative' && (
-            <div className="bg-success-50 border border-success-200 rounded-lg p-4">
-              <h4 className="font-semibold text-success-900 mb-2">Negative Result</h4>
-              <p className="text-success-800">
-                A negative result indicates the absence of the target biomarker. This is a normal result, but please continue to follow healthcare guidelines.
-              </p>
-            </div>
-          )}
-          
-          {result.result.toLowerCase() === 'invalid' && (
-            <div className="bg-warning-50 border border-warning-200 rounded-lg p-4">
-              <h4 className="font-semibold text-warning-900 mb-2">Invalid Result</h4>
-              <p className="text-warning-800">
-                The test result could not be determined. This may be due to insufficient sample, improper test execution, or test kit issues. Please repeat the test with a new kit.
-              </p>
-            </div>
-          )}
+          </div>
+        )}
+
+        {/* Analysis Results */}
+        {result.details?.analysis && result.details.analysis.length > 0 && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+            <h4 className="font-semibold text-gray-900 mb-3">Analysis</h4>
+            <ul className="space-y-2">
+              {result.details.analysis.map((item: string, index: number) => (
+                <li key={index} className="flex items-center text-gray-700">
+                  <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Result Interpretation */}
+        {result.result.toLowerCase() === 'normal' && (
+          <div className="bg-success-50 border border-success-200 rounded-lg p-4">
+            <h4 className="font-semibold text-success-900 mb-2">CardioChek Plus - Normal Result</h4>
+            <p className="text-success-800">
+              Your CardioChek Plus device shows normal levels for cardiovascular markers. 
+              Continue to maintain a healthy lifestyle and follow your healthcare provider's recommendations for regular monitoring.
+            </p>
+          </div>
+        )}
+        
+        {result.result.toLowerCase() === 'borderline' && (
+          <div className="bg-warning-50 border border-warning-200 rounded-lg p-4">
+            <h4 className="font-semibold text-warning-900 mb-2">CardioChek Plus - Borderline Result</h4>
+            <p className="text-warning-800">
+              Your CardioChek Plus device shows some borderline values. Consider lifestyle modifications and 
+              consult with a healthcare professional for personalized guidance on managing your cardiovascular health.
+            </p>
+          </div>
+        )}
+        
+        {result.result.toLowerCase() === 'high risk' && (
+          <div className="bg-danger-50 border border-danger-200 rounded-lg p-4">
+            <h4 className="font-semibold text-danger-900 mb-2">CardioChek Plus - High Risk Result</h4>
+            <p className="text-danger-800">
+              Your CardioChek Plus device shows elevated levels in one or more cardiovascular markers. 
+              Please consult with a healthcare professional immediately for further evaluation and guidance on managing your cardiovascular health.
+            </p>
+          </div>
+        )}
+        
+        {result.result.toLowerCase() === 'no cardioChek plus detected' && (
+          <div className="bg-warning-50 border border-warning-200 rounded-lg p-4">
+            <h4 className="font-semibold text-warning-900 mb-2">CardioChek Plus Not Detected</h4>
+            <p className="text-warning-800">
+              No CardioChek Plus device was detected in the image. Please ensure the device is clearly visible 
+              and try capturing the image again with better lighting and positioning.
+            </p>
+          </div>
+        )}
+        
+        {result.result.toLowerCase() === 'ocr failed' && (
+          <div className="bg-warning-50 border border-warning-200 rounded-lg p-4">
+            <h4 className="font-semibold text-warning-900 mb-2">CardioChek Plus - Screen Reading Failed</h4>
+            <p className="text-warning-800">
+              The CardioChek Plus screen could not be read properly. This may be due to poor image quality, 
+              screen glare, or the device not being in the correct position. Please ensure the device screen is clearly visible 
+              and try capturing the image again.
+            </p>
+          </div>
+        )}
         </div>
       </div>
 

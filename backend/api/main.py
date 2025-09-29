@@ -14,7 +14,7 @@ from PIL import Image
 import numpy as np
 
 from services.image_processor import ImageProcessor
-from services.model_manager import ModelManager
+from services.real_model_manager import RealModelManager
 from api.schemas import ScanResult, HealthResponse
 
 # Configure logging
@@ -33,14 +33,19 @@ app = FastAPI(
 # CORS middleware for frontend communication
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://localhost:3001", 
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Initialize services
-model_manager = ModelManager()
+model_manager = RealModelManager()
 image_processor = ImageProcessor()
 
 @app.on_event("startup")
@@ -96,40 +101,51 @@ async def scan_kit(file: UploadFile = File(...)):
         
         logger.info(f"Processing image: {file.filename}, size: {image.size}")
         
-        # Step 1: Detect kit location using object detection model
-        kit_detection = await model_manager.detect_kit(image_array)
+        # Step 1: Detect CardioChek Plus kit using real CVML
+        kit_detection = await model_manager.detect_cardio_chek_kit(image_array)
         
         if not kit_detection["detected"]:
             return ScanResult(
-                result="No kit detected",
+                result="No CardioChek Plus detected",
                 confidence=0.0,
                 bounding_box=None,
                 processing_time=kit_detection.get("processing_time", 0),
-                error="No cardio health check kit detected in the image"
+                error="No CardioChek Plus device detected in the image. Please ensure the device is clearly visible."
             )
         
-        # Step 2: Extract and preprocess the kit region
-        kit_region = image_processor.extract_kit_region(
-            image_array, 
-            kit_detection["bounding_box"]
-        )
+        # Step 2: Extract kit region for OCR processing
+        bbox = kit_detection["bounding_box"]
+        x, y, w, h = int(bbox["x"]), int(bbox["y"]), int(bbox["width"]), int(bbox["height"])
+        kit_region = image_array[y:y+h, x:x+w]
         
-        # Step 3: Align and crop the result area
-        result_roi = image_processor.extract_result_roi(kit_region)
+        # Step 3: Extract screen values using OCR
+        ocr_result = await model_manager.extract_screen_values(kit_region)
         
-        # Step 4: Classify the result using classification model
-        classification_result = await model_manager.classify_result(result_roi)
+        if not ocr_result["success"]:
+            return ScanResult(
+                result="OCR Failed",
+                confidence=0.0,
+                bounding_box=bbox,
+                processing_time=kit_detection.get("processing_time", 0) + ocr_result.get("processing_time", 0),
+                error="Failed to read CardioChek Plus screen values. Please ensure the screen is clearly visible."
+            )
+        
+        # Step 4: Classify result based on extracted values
+        classification_result = await model_manager.classify_cardio_chek_result(ocr_result["values"])
         
         # Step 5: Combine results
         final_result = ScanResult(
             result=classification_result["result"],
             confidence=classification_result["confidence"],
             bounding_box=kit_detection["bounding_box"],
-            processing_time=kit_detection.get("processing_time", 0) + classification_result.get("processing_time", 0),
+            processing_time=kit_detection.get("processing_time", 0) + ocr_result.get("processing_time", 0) + classification_result.get("processing_time", 0),
             details={
                 "kit_detection_confidence": kit_detection["confidence"],
+                "ocr_values": ocr_result["values"],
                 "result_classification": classification_result,
-                "image_dimensions": image.size
+                "image_dimensions": image.size,
+                "extracted_values": classification_result.get("values", {}),
+                "analysis": classification_result.get("analysis", [])
             }
         )
         

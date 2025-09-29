@@ -70,12 +70,26 @@ setup_backend() {
     # Activate virtual environment
     source venv/bin/activate
     
-    # Upgrade pip
-    pip install --upgrade pip
+    # Upgrade pip and setuptools
+    pip install --upgrade pip setuptools wheel
     
-    # Install requirements
-    print_status "Installing Python dependencies..."
-    pip install -r requirements.txt
+    # Check Python version and use appropriate requirements
+    PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    print_status "Detected Python version: $PYTHON_VERSION"
+    
+    # Install requirements based on Python version
+    if [[ "$PYTHON_VERSION" == "3.13" ]]; then
+        print_status "Using Python 3.13 compatible requirements..."
+        if [ -f "requirements-py313.txt" ]; then
+            pip install -r requirements-py313.txt
+        else
+            print_warning "Python 3.13 requirements file not found, using standard requirements..."
+            pip install -r requirements.txt
+        fi
+    else
+        print_status "Installing Python dependencies..."
+        pip install -r requirements.txt
+    fi
     
     # Create necessary directories
     mkdir -p models

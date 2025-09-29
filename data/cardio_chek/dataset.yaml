@@ -1,0 +1,5 @@
+path: /Users/karthickrajamurugan/Safe/CVML/data/cardio_chek
+train: yolo/images
+val: yolo/images
+nc: 1
+names: ['cardio_chek_plus']

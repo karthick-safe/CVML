@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CVML Camera Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .camera-container {
+            position: relative;
+            max-width: 100%;
+            margin: 20px 0;
+        }
+        video {
+            width: 100%;
+            height: auto;
+            border: 2px solid #ccc;
+            border-radius: 8px;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .error {
+            color: red;
+            background: #ffe6e6;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .success {
+            color: green;
+            background: #e6ffe6;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        canvas {
+            display: none;
+        }
+        .captured-image {
+            max-width: 100%;
+            height: auto;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>CVML Camera Test</h1>
+    <p>This page tests the camera functionality for the CVML Cardio Health Check Kit Analyzer.</p>
+    
+    <div class="controls">
+        <button id="startCamera">Start Camera</button>
+        <button id="stopCamera" disabled>Stop Camera</button>
+        <button id="captureImage" disabled>Capture Image</button>
+        <button id="uploadImage">Upload Image</button>
+    </div>
+    
+    <div id="error" class="error" style="display: none;"></div>
+    <div id="success" class="success" style="display: none;"></div>
+    
+    <div class="camera-container">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="canvas"></canvas>
+    </div>
+    
+    <div id="capturedImageContainer" style="display: none;">
+        <h3>Captured Image:</h3>
+        <img id="capturedImage" class="captured-image" alt="Captured image">
+    </div>
+    
+    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+    
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const startBtn = document.getElementById('startCamera');
+        const stopBtn = document.getElementById('stopCamera');
+        const captureBtn = document.getElementById('captureImage');
+        const uploadBtn = document.getElementById('uploadImage');
+        const fileInput = document.getElementById('fileInput');
+        const errorDiv = document.getElementById('error');
+        const successDiv = document.getElementById('success');
+        const capturedImageContainer = document.getElementById('capturedImageContainer');
+        const capturedImage = document.getElementById('capturedImage');
+        
+        let stream = null;
+        
+        function showError(message) {
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            successDiv.style.display = 'none';
+        }
+        
+        function showSuccess(message) {
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            errorDiv.style.display = 'none';
+        }
+        
+        function hideMessages() {
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+        }
+        
+        async function startCamera() {
+            try {
+                hideMessages();
+                
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('Camera not supported on this device');
+                }
+                
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280, min: 640 },
+                        height: { ideal: 720, min: 480 }
+                    }
+                });
+                
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    video.play().catch(console.error);
+                };
+                
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                captureBtn.disabled = false;
+                
+                showSuccess('Camera started successfully!');
+                
+            } catch (err) {
+                console.error('Error accessing camera:', err);
+                let errorMessage = 'Unable to access camera. ';
+                
+                if (err.name === 'NotAllowedError') {
+                    errorMessage += 'Please allow camera permissions and try again.';
+                } else if (err.name === 'NotFoundError') {
+                    errorMessage += 'No camera found on this device.';
+                } else if (err.name === 'NotSupportedError') {
+                    errorMessage += 'Camera not supported on this device.';
+                } else {
+                    errorMessage += 'Please check permissions and try again.';
+                }
+                
+                showError(errorMessage);
+            }
+        }
+        
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            video.srcObject = null;
+            
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            captureBtn.disabled = true;
+            
+            hideMessages();
+        }
+        
+        function captureImage() {
+            if (!video || !canvas) return;
+            
+            const context = canvas.getContext('2d');
+            if (!context) return;
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            
+            const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            capturedImage.src = imageDataUrl;
+            capturedImageContainer.style.display = 'block';
+            
+            showSuccess('Image captured successfully!');
+        }
+        
+        function uploadImage() {
+            fileInput.click();
+        }
+        
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    capturedImage.src = e.target.result;
+                    capturedImageContainer.style.display = 'block';
+                    showSuccess('Image uploaded successfully!');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+        
+        // Event listeners
+        startBtn.addEventListener('click', startCamera);
+        stopBtn.addEventListener('click', stopCamera);
+        captureBtn.addEventListener('click', captureImage);
+        uploadBtn.addEventListener('click', uploadImage);
+        
+        // Auto-start camera on page load
+        window.addEventListener('load', () => {
+            setTimeout(startCamera, 1000);
+        });
+    </script>
+</body>
+</html>
