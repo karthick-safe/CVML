@@ -15,6 +15,30 @@ AI-powered analysis of CardioChek Plus health check kits using Computer Vision a
 
 ## 🚀 Quick Start
 
+### **⚠️ First-Time Setup Required**
+
+The trained model files are **not included** in the repository (too large for GitHub). 
+
+**See SETUP_INSTRUCTIONS.md for complete setup steps.**
+
+Quick setup:
+```bash
+# 1. Install backend dependencies
+cd backend && python3.13 -m venv venv
+venv/bin/pip install -r requirements-py313.txt
+
+# 2. Install frontend dependencies
+cd ../frontend && npm install
+
+# 3. Generate training data
+cd .. && venv/bin/python scripts/generate_cardio_chek_images.py
+
+# 4. Train model (creates cardio_chek_tf_detector.keras)
+cd backend && venv/bin/python train_tensorflow.py
+```
+
+### **After Setup - Run Application**
+
 ### **Option 1: Use Start Script**
 ```bash
 ./start.sh
