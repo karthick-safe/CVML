@@ -1,0 +1,145 @@
+{
+  "total_annotations": 10,
+  "annotations": [
+    {
+      "image": "IMG_20250815_123642707.jpg",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 546,
+        "y": 867,
+        "width": 1030,
+        "height": 694
+      },
+      "image_size": {
+        "width": 2304,
+        "height": 4096
+      }
+    },
+    {
+      "image": "IMG_20250815_123640167.jpg",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 578,
+        "y": 1118,
+        "width": 943,
+        "height": 620
+      },
+      "image_size": {
+        "width": 2304,
+        "height": 4096
+      }
+    },
+    {
+      "image": "31nbt09qyel.jpg",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 554,
+        "y": 530,
+        "width": 421,
+        "height": 240
+      },
+      "image_size": {
+        "width": 1500,
+        "height": 1650
+      }
+    },
+    {
+      "image": "IMG_20250815_123638229.jpg",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 620,
+        "y": 923,
+        "width": 935,
+        "height": 577
+      },
+      "image_size": {
+        "width": 2304,
+        "height": 4096
+      }
+    },
+    {
+      "image": "IMG_20250815_123644183.jpg",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 556,
+        "y": 1284,
+        "width": 984,
+        "height": 672
+      },
+      "image_size": {
+        "width": 2304,
+        "height": 4096
+      }
+    },
+    {
+      "image": "IMG_20250815_123634073.jpg",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 665,
+        "y": 1145,
+        "width": 1016,
+        "height": 771
+      },
+      "image_size": {
+        "width": 2304,
+        "height": 4096
+      }
+    },
+    {
+      "image": "CardioChek_Plus_wscreen_MgdL-NoDate-768x1271.png",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 216,
+        "y": 333,
+        "width": 347,
+        "height": 266
+      },
+      "image_size": {
+        "width": 768,
+        "height": 1271
+      }
+    },
+    {
+      "image": "download.jpeg",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 24,
+        "y": 48,
+        "width": 73,
+        "height": 52
+      },
+      "image_size": {
+        "width": 225,
+        "height": 225
+      }
+    },
+    {
+      "image": "download (1).jpeg",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 83,
+        "y": 61,
+        "width": 61,
+        "height": 45
+      },
+      "image_size": {
+        "width": 225,
+        "height": 225
+      }
+    },
+    {
+      "image": "download (2).jpeg",
+      "class": "cardio_chek_plus",
+      "bbox": {
+        "x": 28,
+        "y": 42,
+        "width": 67,
+        "height": 36
+      },
+      "image_size": {
+        "width": 330,
+        "height": 153
+      }
+    }
+  ]
+}

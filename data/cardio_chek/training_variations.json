@@ -1,0 +1,7 @@
+[
+  {"chol": 150, "hdl": 45, "trig": 120, "glu": 90, "label": "normal"},
+  {"chol": 180, "hdl": 50, "trig": 140, "glu": 85, "label": "normal"},
+  {"chol": 200, "hdl": 40, "trig": 180, "glu": 100, "label": "borderline"},
+  {"chol": 250, "hdl": 35, "trig": 220, "glu": 110, "label": "high_risk"},
+  {"chol": 300, "hdl": 30, "trig": 300, "glu": 130, "label": "high_risk"}
+]

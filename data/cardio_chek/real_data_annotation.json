@@ -1,0 +1,77 @@
+{
+  "image_info": {
+    "filename": "cardio_chek_real_sample.jpg",
+    "width": 640,
+    "height": 480,
+    "device_type": "CardioChek Plus",
+    "panel_type": "eGLU+LIPIDS"
+  },
+  "annotations": {
+    "device_detection": {
+      "class": "cardio_chek_plus",
+      "bbox": [
+        50,
+        30,
+        540,
+        400
+      ],
+      "confidence": 1.0
+    },
+    "screen_roi": {
+      "class": "screen_display",
+      "bbox": [
+        80,
+        60,
+        480,
+        350
+      ],
+      "confidence": 1.0
+    },
+    "readings": {
+      "chol": {
+        "label": "CHOL",
+        "value": "120",
+        "unit": "mg/dL",
+        "bbox": [
+          100,
+          120,
+          200,
+          140
+        ]
+      },
+      "hdl": {
+        "label": "HDL CHOL",
+        "value": "106",
+        "unit": "mg/dL",
+        "bbox": [
+          100,
+          160,
+          250,
+          180
+        ]
+      },
+      "trig": {
+        "label": "TRIG",
+        "value": "157",
+        "unit": "mg/dL",
+        "bbox": [
+          100,
+          200,
+          200,
+          220
+        ]
+      },
+      "glu": {
+        "label": "eGLU",
+        "value": "52",
+        "unit": "mg/dL",
+        "bbox": [
+          100,
+          240,
+          200,
+          260
+        ]
+      }
+    }
+  }
+}

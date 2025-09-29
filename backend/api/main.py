@@ -14,7 +14,7 @@ from PIL import Image
 import numpy as np
 
 from services.image_processor import ImageProcessor
-from services.real_model_manager import RealModelManager
+from services.tensorflow_model_manager import TensorFlowModelManager
 from api.schemas import ScanResult, HealthResponse
 
 # Configure logging
@@ -45,18 +45,10 @@ app.add_middleware(
 )
 
 # Initialize services
-model_manager = RealModelManager()
+model_manager = TensorFlowModelManager()
 image_processor = ImageProcessor()
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize models on startup"""
-    try:
-        await model_manager.load_models()
-        logger.info("Models loaded successfully")
-    except Exception as e:
-        logger.error(f"Failed to load models: {e}")
-        raise
+# Models will be initialized on first use
 
 @app.get("/", response_model=HealthResponse)
 async def root():

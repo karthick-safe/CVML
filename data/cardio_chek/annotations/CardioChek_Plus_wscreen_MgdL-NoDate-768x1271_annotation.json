@@ -1,0 +1,14 @@
+{
+  "image": "CardioChek_Plus_wscreen_MgdL-NoDate-768x1271.png",
+  "class": "cardio_chek_plus",
+  "bbox": {
+    "x": 216,
+    "y": 333,
+    "width": 347,
+    "height": 266
+  },
+  "image_size": {
+    "width": 768,
+    "height": 1271
+  }
+}

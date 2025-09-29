@@ -1,0 +1,14 @@
+{
+  "image": "download (2).jpeg",
+  "class": "cardio_chek_plus",
+  "bbox": {
+    "x": 28,
+    "y": 42,
+    "width": 67,
+    "height": 36
+  },
+  "image_size": {
+    "width": 330,
+    "height": 153
+  }
+}

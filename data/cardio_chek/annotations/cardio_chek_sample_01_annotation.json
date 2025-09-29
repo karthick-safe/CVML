@@ -1,0 +1,14 @@
+{
+  "image": "cardio_chek_sample_01.jpg",
+  "class": "cardio_chek_plus",
+  "bbox": {
+    "x": 195,
+    "y": 157,
+    "width": 212,
+    "height": 171
+  },
+  "image_size": {
+    "width": 800,
+    "height": 600
+  }
+}

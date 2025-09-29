@@ -76,15 +76,22 @@ class RealModelManager:
     def _load_detection_model(self):
         """Load kit detection model"""
         try:
-            # Load the trained YOLOv8 model
+            # Load the retrained YOLOv8 model with real data
             from ultralytics import YOLO
-            model_path = "/Users/karthickrajamurugan/Safe/CVML/backend/cardio_chek_models/cardio_chek_detector3/weights/best.pt"
+            model_path = "/Users/karthickrajamurugan/Safe/CVML/cardio_chek_models/cardio_chek_detector_real/weights/best.pt"
             self.detection_model = YOLO(model_path)
-            logger.info("Trained YOLOv8 model loaded successfully")
+            logger.info("Retrained YOLOv8 model with real data loaded successfully")
         except Exception as e:
-            logger.warning(f"Failed to load trained YOLO model: {e}")
-            logger.info("Falling back to OpenCV-based detection")
-            self.detection_model = None
+            logger.warning(f"Failed to load retrained YOLO model: {e}")
+            # Try fallback to original model
+            try:
+                fallback_path = "/Users/karthickrajamurugan/Safe/CVML/backend/cardio_chek_models/cardio_chek_detector3/weights/best.pt"
+                self.detection_model = YOLO(fallback_path)
+                logger.info("Fallback YOLO model loaded successfully")
+            except Exception as e2:
+                logger.warning(f"Failed to load fallback YOLO model: {e2}")
+                logger.info("Falling back to OpenCV-based detection")
+                self.detection_model = None
     
     async def detect_cardio_chek_kit(self, image: np.ndarray) -> Dict[str, Any]:
         """
@@ -109,7 +116,7 @@ class RealModelManager:
                 "detected": False,
                 "confidence": 0.0,
                 "bounding_box": None,
-                "processing_time": time.time() - start_time,
+                "processing_time": float(time.time() - start_time),
                 "error": str(e)
             }
     
@@ -139,15 +146,15 @@ class RealModelManager:
                         "detected": True,
                         "confidence": float(confidence),
                         "bounding_box": bbox,
-                        "processing_time": time.time() - start_time,
+                        "processing_time": float(time.time() - start_time),
                         "method": "yolo_detection"
                     }
             
-            return {"detected": False, "confidence": 0.0, "bounding_box": None}
+            return {"detected": False, "confidence": 0.0, "bounding_box": None, "processing_time": float(time.time() - start_time)}
             
         except Exception as e:
             logger.error(f"YOLO detection error: {e}")
-            return {"detected": False, "confidence": 0.0, "bounding_box": None}
+            return {"detected": False, "confidence": 0.0, "bounding_box": None, "processing_time": float(time.time() - start_time)}
     
     async def _opencv_detection_fallback(self, image: np.ndarray, start_time: float) -> Dict[str, Any]:
         """Enhanced OpenCV-based detection using multiple strategies"""
@@ -157,11 +164,14 @@ class RealModelManager:
             
             processing_time = time.time() - start_time
             
+            # Convert all numpy types to native Python types
+            detection_result = self._convert_to_native_types(detection_result)
+            
             return {
-                "detected": detection_result["detected"],
-                "confidence": detection_result["confidence"],
+                "detected": bool(detection_result["detected"]),
+                "confidence": float(detection_result["confidence"]),
                 "bounding_box": detection_result["bounding_box"],
-                "processing_time": processing_time,
+                "processing_time": float(processing_time),
                 "method": "enhanced_opencv_detection"
             }
             
@@ -171,7 +181,7 @@ class RealModelManager:
                 "detected": False,
                 "confidence": 0.0,
                 "bounding_box": None,
-                "processing_time": time.time() - start_time,
+                "processing_time": float(time.time() - start_time),
                 "error": str(e)
             }
     
@@ -305,11 +315,15 @@ class RealModelManager:
             
             processing_time = time.time() - start_time
             
+            # Convert all numpy types to native Python types
+            best_values = self._convert_to_native_types(best_values)
+            all_ocr_results = self._convert_to_native_types(all_ocr_results)
+            
             return {
                 "success": self._count_extracted_values(best_values) > 0,
                 "values": best_values,
                 "raw_ocr": all_ocr_results,
-                "processing_time": processing_time
+                "processing_time": float(processing_time)
             }
             
         except Exception as e:
@@ -369,6 +383,19 @@ class RealModelManager:
             if values.get(key) is not None:
                 count += 1
         return count
+    
+    def _convert_to_native_types(self, obj):
+        """Recursively convert numpy types to native Python types"""
+        if isinstance(obj, dict):
+            return {key: self._convert_to_native_types(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_to_native_types(item) for item in obj]
+        elif hasattr(obj, 'item'):  # numpy scalar
+            return obj.item()
+        elif hasattr(obj, 'tolist'):  # numpy array
+            return obj.tolist()
+        else:
+            return obj
     
     def _preprocess_for_ocr(self, image: np.ndarray) -> np.ndarray:
         """
@@ -437,7 +464,7 @@ class RealModelManager:
         all_text = all_text.upper()
         logger.info(f"Raw OCR text: {all_text}")
         
-        # Enhanced patterns for CardioChek Plus (including common OCR errors)
+        # Enhanced patterns for CardioChek Plus segmented display (based on provided image)
         enhanced_patterns = {
             'cholesterol': [
                 r'CHOL\s*(\d+\.?\d*)\s*mg/dL',
@@ -445,10 +472,15 @@ class RealModelManager:
                 r'CHOLESTEROL\s*(\d+\.?\d*)',
                 r'(\d+\.?\d*)\s*mg/dL\s*CHOL',
                 r'(\d+\.?\d*)\s*CHOL',
-                # Common OCR errors
-                r'CHOL\s*\{(\d+)\}mg/',
+                # Segmented display specific patterns
                 r'CHOL\s*(\d+)\s*mg/',
-                r'CHOL\s*(\d+)\s*mg'
+                r'CHOL\s*(\d+)\s*mg',
+                r'CHOL\s*\{(\d+)\}mg/',
+                r'CHOL\s*(\d+)\s*mg/dL',
+                # Additional patterns for segmented fonts
+                r'CHOL\s*(\d+)\s*mg/',
+                r'CHOL\s*(\d+)\s*mg',
+                r'CHOL\s*(\d+)\s*mg/dL'
             ],
             'hdl': [
                 r'HDL\s*CHOL\s*(\d+\.?\d*)\s*mg/dL',
@@ -457,10 +489,15 @@ class RealModelManager:
                 r'HDL\s*(\d+\.?\d*)',
                 r'(\d+\.?\d*)\s*mg/dL\s*HDL',
                 r'(\d+\.?\d*)\s*HDL',
-                # Common OCR errors
+                # Segmented display specific patterns
                 r'HDL[Ee](\d+)\s*mg/',
                 r'HDL\s*(\d+)\s*mg/',
-                r'HDL\s*(\d+)\s*mg'
+                r'HDL\s*(\d+)\s*mg',
+                r'HDL\s*CHOL\s*(\d+)\s*mg/dL',
+                # Additional patterns for segmented fonts
+                r'HDL\s*(\d+)\s*mg/',
+                r'HDL\s*(\d+)\s*mg',
+                r'HDL\s*(\d+)\s*mg/dL'
             ],
             'triglycerides': [
                 r'TRIG\s*(\d+\.?\d*)\s*mg/dL',
@@ -468,20 +505,32 @@ class RealModelManager:
                 r'TRIGLYCERIDES\s*(\d+\.?\d*)',
                 r'(\d+\.?\d*)\s*mg/dL\s*TRIG',
                 r'(\d+\.?\d*)\s*TRIG',
-                # Common OCR errors
+                # Segmented display specific patterns
                 r'TrIc\s*(\d+)\s*mg/',
                 r'TRIG\s*(\d+)\s*mg/',
-                r'TRIG\s*(\d+)\s*mg'
+                r'TRIG\s*(\d+)\s*mg',
+                r'TRIG\s*(\d+)\s*mg/dL',
+                # Additional patterns for segmented fonts
+                r'TRIG\s*(\d+)\s*mg/',
+                r'TRIG\s*(\d+)\s*mg',
+                r'TRIG\s*(\d+)\s*mg/dL'
             ],
             'glucose': [
-                r'GLU\s*(\d+\.?\d*)\s*mg/dL',
-                r'GLU\s*(\d+\.?\d*)',
                 r'eGLU\s*(\d+\.?\d*)\s*mg/dL',
                 r'eGLU\s*(\d+\.?\d*)',
+                r'GLU\s*(\d+\.?\d*)\s*mg/dL',
+                r'GLU\s*(\d+\.?\d*)',
                 r'GLUCOSE\s*(\d+\.?\d*)',
-                r'(\d+\.?\d*)\s*mg/dL\s*GLU',
-                r'(\d+\.?\d*)\s*GLU',
-                # Common OCR errors
+                r'(\d+\.?\d*)\s*mg/dL\s*eGLU',
+                r'(\d+\.?\d*)\s*eGLU',
+                # Segmented display specific patterns
+                r'eGLU\s*(\d+)\s*mg/',
+                r'eGLU\s*(\d+)\s*mg',
+                r'GLU\s*(\d+)\s*mg/',
+                r'GLU\s*(\d+)\s*mg',
+                # Additional patterns for segmented fonts
+                r'eGLU\s*(\d+)\s*mg/',
+                r'eGLU\s*(\d+)\s*mg',
                 r'GLU\s*(\d+)\s*mg/',
                 r'GLU\s*(\d+)\s*mg'
             ]
@@ -541,12 +590,16 @@ class RealModelManager:
             # Analyze values based on medical standards
             result_analysis = self._analyze_cardio_values(values)
             
+            # Convert all numpy types to native Python types
+            values = self._convert_to_native_types(values)
+            result_analysis = self._convert_to_native_types(result_analysis)
+            
             return {
-                "result": result_analysis["result"],
-                "confidence": result_analysis["confidence"],
+                "result": str(result_analysis["result"]),
+                "confidence": float(result_analysis["confidence"]),
                 "values": values,
                 "analysis": result_analysis["analysis"],
-                "processing_time": time.time() - start_time
+                "processing_time": float(time.time() - start_time)
             }
             
         except Exception as e:
@@ -555,7 +608,7 @@ class RealModelManager:
                 "result": "Invalid",
                 "confidence": 0.0,
                 "error": str(e),
-                "processing_time": time.time() - start_time
+                "processing_time": float(time.time() - start_time)
             }
     
     def _analyze_cardio_values(self, values: Dict[str, Any]) -> Dict[str, Any]:

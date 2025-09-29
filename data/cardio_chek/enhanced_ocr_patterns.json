@@ -1,0 +1,49 @@
+{
+  "cholesterol": [
+    "CHOL\\s*(\\d+\\.?\\d*)\\s*mg/dL",
+    "CHOL\\s*(\\d+\\.?\\d*)",
+    "CHOLESTEROL\\s*(\\d+\\.?\\d*)",
+    "(\\d+\\.?\\d*)\\s*mg/dL\\s*CHOL",
+    "(\\d+\\.?\\d*)\\s*CHOL",
+    "CHOL\\s*(\\d+)\\s*mg/",
+    "CHOL\\s*(\\d+)\\s*mg",
+    "CHOL\\s*\\{(\\d+)\\}mg/",
+    "CHOL\\s*(\\d+)\\s*mg/dL"
+  ],
+  "hdl": [
+    "HDL\\s*CHOL\\s*(\\d+\\.?\\d*)\\s*mg/dL",
+    "HDL\\s*(\\d+\\.?\\d*)\\s*mg/dL",
+    "HDL\\s*CHOL\\s*(\\d+\\.?\\d*)",
+    "HDL\\s*(\\d+\\.?\\d*)",
+    "(\\d+\\.?\\d*)\\s*mg/dL\\s*HDL",
+    "(\\d+\\.?\\d*)\\s*HDL",
+    "HDL[Ee](\\d+)\\s*mg/",
+    "HDL\\s*(\\d+)\\s*mg/",
+    "HDL\\s*(\\d+)\\s*mg",
+    "HDL\\s*CHOL\\s*(\\d+)\\s*mg/dL"
+  ],
+  "triglycerides": [
+    "TRIG\\s*(\\d+\\.?\\d*)\\s*mg/dL",
+    "TRIG\\s*(\\d+\\.?\\d*)",
+    "TRIGLYCERIDES\\s*(\\d+\\.?\\d*)",
+    "(\\d+\\.?\\d*)\\s*mg/dL\\s*TRIG",
+    "(\\d+\\.?\\d*)\\s*TRIG",
+    "TrIc\\s*(\\d+)\\s*mg/",
+    "TRIG\\s*(\\d+)\\s*mg/",
+    "TRIG\\s*(\\d+)\\s*mg",
+    "TRIG\\s*(\\d+)\\s*mg/dL"
+  ],
+  "glucose": [
+    "eGLU\\s*(\\d+\\.?\\d*)\\s*mg/dL",
+    "eGLU\\s*(\\d+\\.?\\d*)",
+    "GLU\\s*(\\d+\\.?\\d*)\\s*mg/dL",
+    "GLU\\s*(\\d+\\.?\\d*)",
+    "GLUCOSE\\s*(\\d+\\.?\\d*)",
+    "(\\d+\\.?\\d*)\\s*mg/dL\\s*eGLU",
+    "(\\d+\\.?\\d*)\\s*eGLU",
+    "eGLU\\s*(\\d+)\\s*mg/",
+    "eGLU\\s*(\\d+)\\s*mg",
+    "GLU\\s*(\\d+)\\s*mg/",
+    "GLU\\s*(\\d+)\\s*mg"
+  ]
+}

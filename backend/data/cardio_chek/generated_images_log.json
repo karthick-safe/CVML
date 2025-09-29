@@ -1,0 +1,57 @@
+[
+  {
+    "filename": "cardio_chek_synthetic_001.jpg",
+    "readings": {
+      "chol": 150,
+      "hdl": 45,
+      "trig": 120,
+      "glu": 90,
+      "label": "normal"
+    },
+    "label": "normal"
+  },
+  {
+    "filename": "cardio_chek_synthetic_002.jpg",
+    "readings": {
+      "chol": 180,
+      "hdl": 50,
+      "trig": 140,
+      "glu": 85,
+      "label": "normal"
+    },
+    "label": "normal"
+  },
+  {
+    "filename": "cardio_chek_synthetic_003.jpg",
+    "readings": {
+      "chol": 200,
+      "hdl": 40,
+      "trig": 180,
+      "glu": 100,
+      "label": "borderline"
+    },
+    "label": "borderline"
+  },
+  {
+    "filename": "cardio_chek_synthetic_004.jpg",
+    "readings": {
+      "chol": 250,
+      "hdl": 35,
+      "trig": 220,
+      "glu": 110,
+      "label": "high_risk"
+    },
+    "label": "high_risk"
+  },
+  {
+    "filename": "cardio_chek_synthetic_005.jpg",
+    "readings": {
+      "chol": 300,
+      "hdl": 30,
+      "trig": 300,
+      "glu": 130,
+      "label": "high_risk"
+    },
+    "label": "high_risk"
+  }
+]

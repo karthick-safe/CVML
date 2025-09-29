@@ -1,0 +1,14 @@
+{
+  "image": "IMG_20250815_123642707.jpg",
+  "class": "cardio_chek_plus",
+  "bbox": {
+    "x": 546,
+    "y": 867,
+    "width": 1030,
+    "height": 694
+  },
+  "image_size": {
+    "width": 2304,
+    "height": 4096
+  }
+}

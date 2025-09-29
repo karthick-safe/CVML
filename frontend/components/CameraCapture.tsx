@@ -20,10 +20,26 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
   const [detectionStatus, setDetectionStatus] = useState<string>('')
   const [isDetecting, setIsDetecting] = useState(false)
   const [detectionBox, setDetectionBox] = useState<{x: number, y: number, width: number, height: number} | null>(null)
+  const [autoCaptureEnabled, setAutoCaptureEnabled] = useState(true)
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.7) // 70% confidence threshold
+  const [currentConfidence, setCurrentConfidence] = useState(0)
+  const [detectionInterval, setDetectionInterval] = useState<NodeJS.Timeout | null>(null)
+  const [detectionHistory, setDetectionHistory] = useState<number[]>([])
+  const [adaptiveThreshold, setAdaptiveThreshold] = useState(0.7)
+  const [thresholdMode, setThresholdMode] = useState<'fixed' | 'adaptive'>('adaptive')
   
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Cleanup effect
+  useEffect(() => {
+    return () => {
+      if (detectionInterval) {
+        clearInterval(detectionInterval)
+      }
+    }
+  }, [detectionInterval])
 
   const startCamera = useCallback(async () => {
     try {
@@ -51,6 +67,8 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
         videoRef.current.onloadedmetadata = () => {
           if (videoRef.current) {
             videoRef.current.play().catch(console.error)
+            // Start continuous real-time detection
+            startContinuousDetection()
           }
         }
       }
@@ -73,11 +91,20 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
   }, [])
 
   const stopCamera = useCallback(() => {
+    // Stop continuous detection
+    if (detectionInterval) {
+      clearInterval(detectionInterval)
+      setDetectionInterval(null)
+    }
+    
     if (stream) {
       stream.getTracks().forEach(track => track.stop())
       setStream(null)
     }
-  }, [stream])
+    setCameraStarted(false)
+    setDetectionBox(null)
+    setCurrentConfidence(0)
+  }, [stream, detectionInterval])
 
   const captureImage = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return
@@ -107,6 +134,56 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
     setCapturedImage(null)
     setError(null)
   }, [])
+
+  const calculateAdaptiveThreshold = useCallback((history: number[]) => {
+    if (history.length < 3) return 0.7 // Default threshold for insufficient data
+    
+    // Sort history to find patterns
+    const sortedHistory = [...history].sort((a, b) => a - b)
+    const median = sortedHistory[Math.floor(sortedHistory.length / 2)]
+    const mean = history.reduce((sum, val) => sum + val, 0) / history.length
+    
+    // Calculate standard deviation
+    const variance = history.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / history.length
+    const stdDev = Math.sqrt(variance)
+    
+    // Adaptive threshold based on:
+    // 1. Median confidence (more stable than mean)
+    // 2. Standard deviation (lower std = more consistent = lower threshold)
+    // 3. Recent trend (last few detections)
+    const recentDetections = history.slice(-3)
+    const recentMean = recentDetections.reduce((sum, val) => sum + val, 0) / recentDetections.length
+    
+    // Base threshold on median, adjusted by consistency
+    let adaptiveThreshold = median * 0.85 // Start at 85% of median
+    
+    // If very consistent (low std dev), lower threshold
+    if (stdDev < 0.1) {
+      adaptiveThreshold = Math.max(0.5, median * 0.8)
+    }
+    
+    // If recent detections are higher, be more aggressive
+    if (recentMean > median) {
+      adaptiveThreshold = Math.max(0.5, recentMean * 0.8)
+    }
+    
+    // If recent detections are lower, be more conservative
+    if (recentMean < median * 0.9) {
+      adaptiveThreshold = Math.min(0.9, median * 0.9)
+    }
+    
+    // Ensure threshold is within reasonable bounds
+    return Math.max(0.5, Math.min(0.95, adaptiveThreshold))
+  }, [])
+
+  const updateDetectionHistory = useCallback((confidence: number) => {
+    setDetectionHistory(prev => {
+      const newHistory = [...prev, confidence].slice(-10) // Keep last 10 detections
+      const newAdaptiveThreshold = calculateAdaptiveThreshold(newHistory)
+      setAdaptiveThreshold(newAdaptiveThreshold)
+      return newHistory
+    })
+  }, [calculateAdaptiveThreshold])
 
   const performRealTimeDetection = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current) return
@@ -142,10 +219,30 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
       if (result.result === 'No CardioChek Plus detected') {
         setDetectionStatus('CardioChek Plus not detected. Please position the device clearly in view.')
         setDetectionBox(null)
+        setCurrentConfidence(0)
       } else {
-        setDetectionStatus(`CardioChek Plus detected! Confidence: ${(result.confidence * 100).toFixed(1)}%`)
+        const confidence = result.confidence
+        setCurrentConfidence(confidence)
+        
+        // Update detection history for adaptive threshold
+        updateDetectionHistory(confidence)
+        
+        // Use adaptive threshold if enabled, otherwise use fixed threshold
+        const currentThreshold = thresholdMode === 'adaptive' ? adaptiveThreshold : confidenceThreshold
+        
+        setDetectionStatus(`CardioChek Plus detected! Confidence: ${(confidence * 100).toFixed(1)}% (Threshold: ${(currentThreshold * 100).toFixed(1)}%)`)
+        
         if (result.bounding_box) {
           setDetectionBox(result.bounding_box)
+        }
+
+        // Auto-capture if confidence is above current threshold
+        if (autoCaptureEnabled && confidence >= currentThreshold) {
+          setDetectionStatus(`High confidence detected! Auto-capturing... (${(confidence * 100).toFixed(1)}% ≥ ${(currentThreshold * 100).toFixed(1)}%)`)
+          // Small delay to show the high confidence message
+          setTimeout(() => {
+            captureImage()
+          }, 500)
         }
       }
 
@@ -155,6 +252,36 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
     } finally {
       setIsDetecting(false)
     }
+  }, [autoCaptureEnabled, confidenceThreshold, adaptiveThreshold, thresholdMode, updateDetectionHistory])
+
+  const startContinuousDetection = useCallback(() => {
+    if (detectionInterval) {
+      clearInterval(detectionInterval)
+    }
+    
+    // Run detection every 2 seconds
+    const interval = setInterval(() => {
+      if (videoRef.current && canvasRef.current && !isDetecting && !isCapturing) {
+        performRealTimeDetection()
+      }
+    }, 2000)
+    
+    setDetectionInterval(interval)
+    setDetectionStatus('Real-time detection started. Position the CardioChek Plus device in view...')
+  }, [detectionInterval, isDetecting, isCapturing, performRealTimeDetection])
+
+  const stopContinuousDetection = useCallback(() => {
+    if (detectionInterval) {
+      clearInterval(detectionInterval)
+      setDetectionInterval(null)
+    }
+    setDetectionStatus('Real-time detection stopped.')
+  }, [detectionInterval])
+
+  const resetAdaptiveThreshold = useCallback(() => {
+    setDetectionHistory([])
+    setAdaptiveThreshold(0.7)
+    setDetectionStatus('Adaptive threshold reset to default.')
   }, [])
 
   const analyzeCapturedImage = useCallback(async () => {
@@ -266,6 +393,125 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
         </div>
       )}
 
+      {/* Auto-Capture Controls */}
+      {cameraStarted && (
+        <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-medium text-gray-700">Auto-Capture Settings</h3>
+            <label className="flex items-center">
+              <input
+                type="checkbox"
+                checked={autoCaptureEnabled}
+                onChange={(e) => setAutoCaptureEnabled(e.target.checked)}
+                className="mr-2"
+              />
+              <span className="text-sm text-gray-600">Enable Auto-Capture</span>
+            </label>
+          </div>
+          
+          {/* Threshold Mode Selection */}
+          <div className="mb-4">
+            <div className="flex items-center space-x-4 mb-2">
+              <label className="text-sm text-gray-600">Threshold Mode:</label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="thresholdMode"
+                  value="adaptive"
+                  checked={thresholdMode === 'adaptive'}
+                  onChange={(e) => setThresholdMode(e.target.value as 'adaptive' | 'fixed')}
+                  className="mr-1"
+                />
+                <span className="text-sm text-gray-600">Adaptive (Recommended)</span>
+              </label>
+              <label className="flex items-center">
+                <input
+                  type="radio"
+                  name="thresholdMode"
+                  value="fixed"
+                  checked={thresholdMode === 'fixed'}
+                  onChange={(e) => setThresholdMode(e.target.value as 'adaptive' | 'fixed')}
+                  className="mr-1"
+                />
+                <span className="text-sm text-gray-600">Fixed</span>
+              </label>
+            </div>
+          </div>
+          
+          {/* Fixed Threshold Controls */}
+          {thresholdMode === 'fixed' && (
+            <div className="flex items-center space-x-4 mb-4">
+              <label className="text-sm text-gray-600">
+                Fixed Threshold: {(confidenceThreshold * 100).toFixed(0)}%
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="0.95"
+                step="0.05"
+                value={confidenceThreshold}
+                onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
+                className="flex-1"
+              />
+            </div>
+          )}
+          
+          {/* Adaptive Threshold Display */}
+          {thresholdMode === 'adaptive' && (
+            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-blue-800">Adaptive Threshold</span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-blue-600">
+                    {(adaptiveThreshold * 100).toFixed(1)}%
+                  </span>
+                  {detectionHistory.length > 0 && (
+                    <button
+                      onClick={resetAdaptiveThreshold}
+                      className="text-xs text-blue-600 hover:text-blue-800 underline"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="text-xs text-blue-600">
+                Based on {detectionHistory.length} recent detections
+                {detectionHistory.length > 0 && (
+                  <span className="ml-2">
+                    (Range: {(Math.min(...detectionHistory) * 100).toFixed(1)}% - {(Math.max(...detectionHistory) * 100).toFixed(1)}%)
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+          
+          {/* Current Status */}
+          {currentConfidence > 0 && (
+            <div className="mt-2 text-sm text-gray-600">
+              <div className="flex items-center justify-between">
+                <span>
+                  Current Confidence: <span className={`font-medium ${
+                    currentConfidence >= (thresholdMode === 'adaptive' ? adaptiveThreshold : confidenceThreshold) 
+                      ? 'text-green-600' : 'text-yellow-600'
+                  }`}>
+                    {(currentConfidence * 100).toFixed(1)}%
+                  </span>
+                </span>
+                <span className="text-xs text-gray-500">
+                  vs {(thresholdMode === 'adaptive' ? adaptiveThreshold : confidenceThreshold) * 100}% threshold
+                </span>
+              </div>
+              {currentConfidence >= (thresholdMode === 'adaptive' ? adaptiveThreshold : confidenceThreshold) && autoCaptureEnabled && (
+                <div className="mt-1 text-green-600 font-medium text-sm">
+                  ✓ Auto-capture ready!
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Camera Interface */}
       {!capturedImage && (
         <div className="space-y-6">
@@ -304,6 +550,26 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
                   )}
                   {isDetecting ? 'Detecting...' : 'Check Detection'}
                 </button>
+                
+                {detectionInterval ? (
+                  <button
+                    onClick={stopContinuousDetection}
+                    className="btn-warning flex items-center"
+                  >
+                    <AlertCircle className="w-4 h-4 mr-2" />
+                    Stop Auto-Detection
+                  </button>
+                ) : (
+                  <button
+                    onClick={startContinuousDetection}
+                    className="btn-success flex items-center"
+                    disabled={isDetecting || isLoading}
+                  >
+                    <Check className="w-4 h-4 mr-2" />
+                    Start Auto-Detection
+                  </button>
+                )}
+                
                 <button
                   onClick={captureImage}
                   className="btn-primary flex items-center"
