@@ -10,7 +10,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8
 // Create axios instance with default config
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000, // 30 second timeout for image processing
+  timeout: 5000, // 5 second timeout for faster real-time detection
   headers: {
     'Content-Type': 'multipart/form-data',
   },

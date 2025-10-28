@@ -4,6 +4,13 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { Camera, ArrowLeft, RotateCcw, Check, AlertCircle, Upload } from 'lucide-react'
 import { analyzeImage } from '@/lib/api'
 
+// Simple logger for camera debugging
+const logger = {
+  info: (msg: string) => console.log(`[Camera] ${msg}`),
+  error: (msg: string, err?: any) => console.error(`[Camera] ${msg}`, err),
+  warn: (msg: string) => console.warn(`[Camera] ${msg}`)
+}
+
 interface CameraCaptureProps {
   onAnalysisComplete: (result: any) => void
   onBack: () => void
@@ -21,11 +28,11 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
   const [isDetecting, setIsDetecting] = useState(false)
   const [detectionBox, setDetectionBox] = useState<{x: number, y: number, width: number, height: number} | null>(null)
   const [autoCaptureEnabled, setAutoCaptureEnabled] = useState(true)
-  const [confidenceThreshold, setConfidenceThreshold] = useState(0.7) // 70% confidence threshold
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.5) // 50% confidence threshold for faster auto-capture
   const [currentConfidence, setCurrentConfidence] = useState(0)
   const [detectionInterval, setDetectionInterval] = useState<NodeJS.Timeout | null>(null)
   const [detectionHistory, setDetectionHistory] = useState<number[]>([])
-  const [adaptiveThreshold, setAdaptiveThreshold] = useState(0.7)
+  const [adaptiveThreshold, setAdaptiveThreshold] = useState(0.5) // Start with 50% for faster initial detection
   const [thresholdMode, setThresholdMode] = useState<'fixed' | 'adaptive'>('adaptive')
   
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -53,8 +60,8 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'environment', // Use back camera on mobile
-          width: { ideal: 1280, min: 640 },
-          height: { ideal: 720, min: 480 }
+          width: { ideal: 640, min: 320 },  // More flexible constraints
+          height: { ideal: 480, min: 240 }
         }
       })
       
@@ -63,30 +70,84 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
         
-        // Wait for video to load
+        // Wait for video to load and ensure it plays
         videoRef.current.onloadedmetadata = () => {
           if (videoRef.current) {
-            videoRef.current.play().catch(console.error)
-            // Start continuous real-time detection
-            startContinuousDetection()
+            videoRef.current.play().then(() => {
+              logger.info('Camera video started successfully')
+              // Start continuous real-time detection
+              startContinuousDetection()
+            }).catch((playError) => {
+              logger.error('Failed to play camera video:', playError)
+              setError('Camera started but video playback failed. Please check your browser settings.')
+            })
+          }
+        }
+
+        // Add error handling for video loading
+        videoRef.current.onerror = () => {
+          logger.error('Video element error occurred')
+          setError('Camera video failed to load. Please refresh and try again.')
+        }
+      }
+    } catch (err: any) {
+      logger.error('Error accessing camera:', err)
+      let errorMessage = 'Unable to access camera. '
+
+      if (err.name === 'NotAllowedError') {
+        errorMessage += 'Please allow camera permissions in your browser settings and refresh the page.'
+      } else if (err.name === 'NotFoundError') {
+        errorMessage += 'No camera found on this device. Please connect a camera and try again.'
+      } else if (err.name === 'NotSupportedError') {
+        errorMessage += 'Camera not supported on this device or browser.'
+      } else if (err.name === 'NotReadableError') {
+        errorMessage += 'Camera is already in use by another application. Please close other apps and try again.'
+      } else if (err.name === 'OverconstrainedError') {
+        errorMessage += 'Camera constraints not supported. Trying with basic settings...'
+        // Retry with basic constraints
+        setTimeout(() => {
+          startCameraBasic()
+        }, 1000)
+        return
+      } else if (err.name === 'SecurityError') {
+        errorMessage += 'Camera access blocked for security reasons. Please check your browser settings.'
+      } else {
+        errorMessage += `Error: ${err.message || 'Unknown camera error'}. Please refresh and try again.`
+      }
+
+      setError(errorMessage)
+    }
+  }, [])
+
+  // Fallback camera start with basic constraints
+  const startCameraBasic = useCallback(async () => {
+    try {
+      logger.info('Attempting basic camera constraints...')
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: true // Most basic constraint possible
+      })
+
+      setStream(mediaStream)
+      setCameraStarted(true)
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream
+
+        videoRef.current.onloadedmetadata = () => {
+          if (videoRef.current) {
+            videoRef.current.play().then(() => {
+              logger.info('Camera video started successfully with basic constraints')
+              startContinuousDetection()
+            }).catch((playError) => {
+              logger.error('Failed to play camera video with basic constraints:', playError)
+              setError('Camera started but video playback failed. Please check your browser settings.')
+            })
           }
         }
       }
     } catch (err: any) {
-      console.error('Error accessing camera:', err)
-      let errorMessage = 'Unable to access camera. '
-      
-      if (err.name === 'NotAllowedError') {
-        errorMessage += 'Please allow camera permissions and try again.'
-      } else if (err.name === 'NotFoundError') {
-        errorMessage += 'No camera found on this device.'
-      } else if (err.name === 'NotSupportedError') {
-        errorMessage += 'Camera not supported on this device.'
-      } else {
-        errorMessage += 'Please check permissions and try again.'
-      }
-      
-      setError(errorMessage)
+      logger.error('Basic camera constraints also failed:', err)
+      setError('Unable to access camera with any settings. Please check camera permissions and refresh the page.')
     }
   }, [])
 
@@ -190,13 +251,12 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
 
     try {
       setIsDetecting(true)
-      setDetectionStatus('Detecting CardioChek Plus...')
 
       // Capture current frame
       const canvas = canvasRef.current
       const video = videoRef.current
       const context = canvas.getContext('2d')
-      
+
       if (!context) return
 
       // Set canvas size to match video
@@ -206,69 +266,89 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
       // Draw current video frame to canvas
       context.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-      // Convert to blob
+      // Convert to blob with optimized quality for faster processing
       const blob = await new Promise<Blob>((resolve) => {
         canvas.toBlob((blob) => {
           if (blob) resolve(blob)
-        }, 'image/jpeg', 0.8)
+        }, 'image/jpeg', 0.7)  // Reduced quality for faster processing
       })
 
-      // Quick detection check
-      const result = await analyzeImage(blob)
-      
+      // Quick detection check with timeout to prevent hanging
+      const detectionPromise = analyzeImage(blob)
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Detection timeout')), 3000) // Increased to 3s for reliability
+      )
+
+      const result = await Promise.race([detectionPromise, timeoutPromise]) as any
+
       if (result.result === 'No CardioChek Plus detected') {
         setDetectionStatus('CardioChek Plus not detected. Please position the device clearly in view.')
         setDetectionBox(null)
         setCurrentConfidence(0)
       } else {
-        const confidence = result.confidence
+        const confidence = result.confidence || 0
         setCurrentConfidence(confidence)
-        
+
         // Update detection history for adaptive threshold
         updateDetectionHistory(confidence)
-        
+
         // Use adaptive threshold if enabled, otherwise use fixed threshold
         const currentThreshold = thresholdMode === 'adaptive' ? adaptiveThreshold : confidenceThreshold
-        
+
         setDetectionStatus(`CardioChek Plus detected! Confidence: ${(confidence * 100).toFixed(1)}% (Threshold: ${(currentThreshold * 100).toFixed(1)}%)`)
-        
+
         if (result.bounding_box) {
           setDetectionBox(result.bounding_box)
         }
 
         // Auto-capture if confidence is above current threshold
         if (autoCaptureEnabled && confidence >= currentThreshold) {
-          setDetectionStatus(`High confidence detected! Auto-capturing... (${(confidence * 100).toFixed(1)}% ≥ ${(currentThreshold * 100).toFixed(1)}%)`)
-          // Small delay to show the high confidence message
-          setTimeout(() => {
-            captureImage()
-          }, 500)
+          // More lenient stability check for faster auto-capture
+          const recentConfidences = detectionHistory.slice(-2) // Reduced from 3 to 2
+          const isStable = recentConfidences.length >= 1 &&
+            recentConfidences.every(c => c >= currentThreshold * 0.8) // Reduced from 0.9 to 0.8
+
+          if (isStable) {
+            setDetectionStatus(`🎯 Auto-capturing... (${(confidence * 100).toFixed(1)}% ≥ ${(currentThreshold * 100).toFixed(1)}%)`)
+            // Minimal delay for instant capture
+            setTimeout(() => {
+              if (videoRef.current && !isCapturing) {
+                captureImage()
+              }
+            }, 150) // Reduced from 300ms to 150ms
+          } else {
+            setDetectionStatus(`✅ Device detected! Confidence: ${(confidence * 100).toFixed(1)}% (Auto-capture ready)`)
+          }
         }
       }
 
     } catch (err) {
       console.error('Real-time detection error:', err)
       setDetectionStatus('Detection failed. Please try again.')
+
+      // Reset confidence on error
+      setCurrentConfidence(0)
+      setDetectionBox(null)
     } finally {
       setIsDetecting(false)
     }
-  }, [autoCaptureEnabled, confidenceThreshold, adaptiveThreshold, thresholdMode, updateDetectionHistory])
+  }, [autoCaptureEnabled, confidenceThreshold, adaptiveThreshold, thresholdMode, updateDetectionHistory, detectionHistory])
 
   const startContinuousDetection = useCallback(() => {
     if (detectionInterval) {
       clearInterval(detectionInterval)
     }
-    
-    // Run detection every 2 seconds
+
+    // Run detection every 500ms for ultra-responsive auto-capture
     const interval = setInterval(() => {
-      if (videoRef.current && canvasRef.current && !isDetecting && !isCapturing) {
+      if (videoRef.current && canvasRef.current && !isDetecting && !isCapturing && cameraStarted) {
         performRealTimeDetection()
       }
-    }, 2000)
-    
+    }, 500)  // Ultra-fast interval for instant auto-capture
+
     setDetectionInterval(interval)
-    setDetectionStatus('Real-time detection started. Position the CardioChek Plus device in view...')
-  }, [detectionInterval, isDetecting, isCapturing, performRealTimeDetection])
+    setDetectionStatus('🚀 Auto-capture active! Position the CardioChek Plus device in view...')
+  }, [detectionInterval, isDetecting, isCapturing, performRealTimeDetection, cameraStarted])
 
   const stopContinuousDetection = useCallback(() => {
     if (detectionInterval) {
@@ -314,7 +394,7 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
     }
   }, [stream, startCamera])
 
-  // Auto-start camera when component mounts
+  // Auto-start camera when component mounts (immediate start)
   useEffect(() => {
     if (!cameraStarted && !stream) {
       startCamera()
@@ -538,6 +618,16 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
               </div>
             ) : (
               <div className="flex flex-col sm:flex-row gap-4">
+                {error && (
+                  <button
+                    onClick={startCamera}
+                    className="btn-warning flex items-center"
+                  >
+                    <Camera className="w-4 h-4 mr-2" />
+                    Retry Camera
+                  </button>
+                )}
+
                 <button
                   onClick={performRealTimeDetection}
                   className="btn-secondary flex items-center"
@@ -550,34 +640,16 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
                   )}
                   {isDetecting ? 'Detecting...' : 'Check Detection'}
                 </button>
-                
-                {detectionInterval ? (
-                  <button
-                    onClick={stopContinuousDetection}
-                    className="btn-warning flex items-center"
-                  >
-                    <AlertCircle className="w-4 h-4 mr-2" />
-                    Stop Auto-Detection
-                  </button>
-                ) : (
-                  <button
-                    onClick={startContinuousDetection}
-                    className="btn-success flex items-center"
-                    disabled={isDetecting || isLoading}
-                  >
-                    <Check className="w-4 h-4 mr-2" />
-                    Start Auto-Detection
-                  </button>
-                )}
-                
+
                 <button
                   onClick={captureImage}
                   className="btn-primary flex items-center"
                   disabled={isCapturing || isLoading}
                 >
-                  <Camera className="w-5 h-5 mr-2" />
+                  <Camera className="w-4 h-4 mr-2" />
                   {isCapturing ? 'Capturing...' : 'Capture Image'}
                 </button>
+
                 <button
                   onClick={stopCamera}
                   className="btn-secondary"
@@ -586,18 +658,71 @@ export default function CameraCapture({ onAnalysisComplete, onBack, isLoading, s
                 </button>
               </div>
             )}
+
+            {/* Auto-Detection Controls */}
+            <div className="flex justify-center space-x-4 mt-4">
+              {detectionInterval ? (
+                <button
+                  onClick={stopContinuousDetection}
+                  className="btn-warning flex items-center"
+                >
+                  <AlertCircle className="w-4 h-4 mr-2" />
+                  Stop Auto-Detection
+                </button>
+              ) : (
+                <button
+                  onClick={startContinuousDetection}
+                  className="btn-success flex items-center"
+                  disabled={isDetecting || isLoading}
+                >
+                  <Check className="w-4 h-4 mr-2" />
+                  Start Auto-Detection
+                </button>
+              )}
+
+              <button
+                onClick={captureImage}
+                className="btn-primary flex items-center"
+                disabled={isCapturing || isLoading}
+              >
+                <Camera className="w-4 h-4 mr-2" />
+                {isCapturing ? 'Capturing...' : 'Capture Image'}
+              </button>
+              <button
+                onClick={stopCamera}
+                className="btn-secondary"
+              >
+                Stop Camera
+              </button>
+            </div>
           </div>
 
+          {/* Camera Loading State */}
+          {stream && !cameraStarted && (
+            <div className="camera-container flex items-center justify-center bg-gray-900 rounded-lg" style={{ height: '384px' }}>
+              <div className="text-center text-white">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+                <p className="text-lg font-medium">Starting camera...</p>
+                <p className="text-sm opacity-75">Please allow camera permissions if prompted</p>
+              </div>
+            </div>
+          )}
+
           {/* Video Stream */}
-          {stream && (
+          {stream && cameraStarted && (
             <div className="camera-container">
               <video
                 ref={videoRef}
                 autoPlay
                 playsInline
                 muted
-                className="w-full h-auto max-h-96 object-cover"
-                style={{ transform: 'scaleX(-1)' }} // Mirror the video for better UX
+                className="w-full h-auto max-h-96 object-cover border-2 border-gray-300 rounded-lg"
+                style={{
+                  transform: 'scaleX(-1)', // Mirror the video for better UX
+                  backgroundColor: '#000' // Black background while loading
+                }}
+                onLoadedData={() => logger.info('Video data loaded')}
+                onCanPlay={() => logger.info('Video can play')}
               />
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="border-2 border-white border-dashed rounded-lg w-80 h-48 opacity-50"></div>

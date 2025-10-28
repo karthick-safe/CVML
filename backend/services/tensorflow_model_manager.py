@@ -215,8 +215,102 @@ class TensorFlowCardioChekDetector:
             logger.error(f"Training failed: {e}")
             raise
 
+class EnhancedYOLOv8Detector:
+    """Enhanced YOLOv8-based CardioChek Plus detector with optimized performance"""
+
+    def __init__(self, model_path: str):
+        self.model_path = model_path
+        self.model = None
+        self.confidence_threshold = 0.3  # Lower threshold for better detection
+        self.input_size = (640, 640)  # YOLOv8 standard size
+        self._load_model()
+
+    def _load_model(self):
+        """Load YOLOv8 model"""
+        try:
+            from ultralytics import YOLO
+            self.model = YOLO(self.model_path)
+            logger.info(f"Loaded enhanced YOLOv8 model from {self.model_path}")
+        except Exception as e:
+            logger.error(f"Failed to load YOLOv8 model: {e}")
+            raise
+
+    def preprocess_image(self, image: np.ndarray) -> np.ndarray:
+        """Preprocess image for YOLOv8 model input"""
+        # YOLOv8 handles preprocessing internally, but we'll ensure proper format
+        if image.shape[-1] == 4:  # Remove alpha channel if present
+            image = image[:, :, :3]
+
+        # Resize to model input size if needed
+        if image.shape[:2] != self.input_size:
+            image = cv2.resize(image, self.input_size)
+
+        return image
+
+    def detect(self, image: np.ndarray) -> Dict[str, Any]:
+        """Detect CardioChek Plus device in image using YOLOv8"""
+        try:
+            # Preprocess image
+            processed_image = self.preprocess_image(image)
+
+            # Run inference
+            results = self.model(processed_image, conf=self.confidence_threshold, verbose=False)
+
+            # Extract results
+            if len(results) > 0 and len(results[0].boxes) > 0:
+                # Get best detection
+                boxes = results[0].boxes
+                best_box = boxes[0]  # Take the first (highest confidence) detection
+
+                # Convert to pixel coordinates
+                height, width = image.shape[:2]
+                bbox = best_box.xyxy[0].cpu().numpy()  # [x1, y1, x2, y2]
+
+                x = int(bbox[0])
+                y = int(bbox[1])
+                w = int(bbox[2] - bbox[0])
+                h = int(bbox[3] - bbox[1])
+                confidence = float(best_box.conf.cpu().numpy())
+
+                # Ensure bbox is within image bounds
+                x = max(0, min(x, width - 1))
+                y = max(0, min(y, height - 1))
+                w = max(1, min(w, width - x))
+                h = max(1, min(h, height - y))
+
+                result = {
+                    "detected": True,
+                    "confidence": confidence,
+                    "bounding_box": {
+                        "x": x,
+                        "y": y,
+                        "width": w,
+                        "height": h,
+                        "confidence": confidence
+                    }
+                }
+
+                logger.info(f"YOLOv8 detection: CardioChek Plus found (confidence: {confidence:.3f})")
+                return result
+            else:
+                logger.info("YOLOv8 detection: No CardioChek Plus device detected")
+                return {
+                    "detected": False,
+                    "confidence": 0.0,
+                    "bounding_box": None
+                }
+
+        except Exception as e:
+            logger.error(f"YOLOv8 detection failed: {e}")
+            return {
+                "detected": False,
+                "confidence": 0.0,
+                "bounding_box": None,
+                "error": str(e)
+            }
+
 class TensorFlowModelManager:
-    """TensorFlow-based model manager for CardioChek Plus analysis"""
+    """Enhanced model manager for CardioChek Plus analysis"""
 
     def __init__(self):
         self.detector = None
@@ -227,11 +321,15 @@ class TensorFlowModelManager:
         """Initialize TensorFlow models"""
         try:
             # Initialize CardioChek detector
-            # Try new .keras format first, then fall back to .h5
+            # Try enhanced model first, then fallback to older models
+            enhanced_model_path = "/Users/karthickrajamurugan/Safe/CVML/backend/cardio_chek_models/cardio_chek_detector_enhanced/weights/best.pt"
             keras_path = "cardio_chek_tf_detector.keras"
             h5_path = "cardio_chek_tf_detector.h5"
-            
-            if Path(keras_path).exists():
+
+            if Path(enhanced_model_path).exists():
+                logger.info(f"Loading enhanced YOLO model from: {enhanced_model_path}")
+                self.detector = EnhancedYOLOv8Detector(enhanced_model_path)
+            elif Path(keras_path).exists():
                 self.detector = TensorFlowCardioChekDetector(keras_path)
             elif Path(h5_path).exists():
                 # Convert old h5 to new keras format
@@ -252,10 +350,10 @@ class TensorFlowModelManager:
             self.ocr_reader = easyocr.Reader(['en'], gpu=False)  # Use CPU for compatibility
 
             self.initialized = True
-            logger.info("TensorFlow model manager initialized successfully")
+            logger.info("Enhanced model manager initialized successfully")
 
         except Exception as e:
-            logger.error(f"Failed to initialize TensorFlow models: {e}")
+            logger.error(f"Failed to initialize models: {e}")
             raise
     
     async def get_model_status(self) -> Dict[str, Any]:
@@ -269,15 +367,20 @@ class TensorFlowModelManager:
         }
 
     async def detect_cardio_chek_kit(self, image: np.ndarray) -> Dict[str, Any]:
-        """Detect CardioChek Plus kit using TensorFlow model"""
+        """Detect CardioChek Plus kit using enhanced YOLOv8 model"""
         start_time = time.time()
 
         try:
             if not self.initialized:
                 await self.initialize()
 
-            # Use TensorFlow detector
-            detection_result = self.detector.detect(image)
+            # Use the appropriate detector (YOLOv8 if available, fallback to TensorFlow)
+            if isinstance(self.detector, EnhancedYOLOv8Detector):
+                detection_result = self.detector.detect(image)
+                method = "yolov8_enhanced_detection"
+            else:
+                detection_result = self.detector.detect(image)
+                method = "tensorflow_detection"
 
             processing_time = time.time() - start_time
 
@@ -286,30 +389,31 @@ class TensorFlowModelManager:
             bbox = detection_result["bounding_box"]
             if bbox and "confidence" not in bbox:
                 bbox["confidence"] = float(detection_result["confidence"])
-            
+
             result = {
                 "detected": bool(detection_result["detected"]),
                 "confidence": float(detection_result["confidence"]),
                 "bounding_box": bbox,
                 "processing_time": float(processing_time),
-                "method": "tensorflow_detection"
+                "method": method
             }
 
             if detection_result["detected"]:
-                logger.info(f"TensorFlow detection: CardioChek Plus found (confidence: {detection_result['confidence']:.3f})")
+                logger.info(f"Detection: CardioChek Plus found (confidence: {detection_result['confidence']:.3f}, method: {method})")
             else:
-                logger.info("TensorFlow detection: No CardioChek Plus device detected")
+                logger.info(f"Detection: No CardioChek Plus device detected (method: {method})")
 
             return result
 
         except Exception as e:
-            logger.error(f"TensorFlow detection error: {e}")
+            logger.error(f"Detection error: {e}")
             return {
                 "detected": False,
                 "confidence": 0.0,
                 "bounding_box": None,
                 "processing_time": float(time.time() - start_time),
-                "error": str(e)
+                "error": str(e),
+                "method": "error"
             }
 
     async def extract_screen_values(self, image: np.ndarray) -> Dict[str, Any]:
@@ -329,7 +433,18 @@ class TensorFlowModelManager:
             # Try OCR on each preprocessed image
             for i, processed_img in enumerate(processed_images):
                 try:
+                    logger.info(f"Trying OCR preprocessing method {i+1}/7")
                     ocr_results = self.ocr_reader.readtext(processed_img)
+
+                    # Log what OCR found for debugging (higher confidence threshold)
+                    if ocr_results:
+                        high_conf_text = [text for (_, text, conf) in ocr_results if conf > 0.3]  # Increased from 0.1 to 0.3
+                        logger.info(f"OCR method {i+1} found high-confidence text: {high_conf_text}")
+                        if not high_conf_text:
+                            logger.warning(f"OCR method {i+1} found low-confidence text only")
+                    else:
+                        logger.warning(f"OCR method {i+1} found no text")
+
                     all_ocr_results.extend(ocr_results)
 
                     # Extract values from this attempt
@@ -338,9 +453,10 @@ class TensorFlowModelManager:
                     # Keep the best result (most values extracted)
                     if self._count_extracted_values(values) > self._count_extracted_values(best_values):
                         best_values = values
+                        logger.info(f"OCR method {i+1} produced better results: {self._count_extracted_values(values)} values")
 
                 except Exception as e:
-                    logger.warning(f"OCR attempt {i} failed: {e}")
+                    logger.warning(f"OCR attempt {i+1} failed: {e}")
                     continue
 
             # If we have multiple OCR results, try combining them
@@ -377,37 +493,53 @@ class TensorFlowModelManager:
         # Convert to grayscale
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-        # Resize for better OCR
-        height, width = gray.shape
-        if height < 200 or width < 200:
-            scale_factor = max(200 / height, 200 / width)
-            new_width = int(width * scale_factor)
-            new_height = int(height * scale_factor)
-            gray = cv2.resize(gray, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-
-        # Method 1: CLAHE + Adaptive threshold
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        # Enhanced preprocessing for CardioChek screens
+        # Method 1: Enhanced CLAHE + Adaptive threshold (optimized for LCD screens)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         clahe_img = clahe.apply(gray)
-        thresh1 = cv2.adaptiveThreshold(clahe_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+
+        # Sharpening kernel for better text edges
+        kernel_sharp = np.array([[-1,-1,-1],
+                                [-1, 9,-1],
+                                [-1,-1,-1]])
+        sharpened = cv2.filter2D(clahe_img, -1, kernel_sharp)
+
+        # Adaptive threshold with optimized parameters for LCD text
+        thresh1 = cv2.adaptiveThreshold(sharpened, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 3)
         processed_images.append(thresh1)
 
-        # Method 2: Otsu thresholding
-        _, thresh2 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # Method 2: Bilateral filtering + Otsu (removes noise while preserving edges)
+        bilateral = cv2.bilateralFilter(gray, 9, 75, 75)
+        _, thresh2 = cv2.threshold(bilateral, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         processed_images.append(thresh2)
 
-        # Method 3: Denoising + Otsu
-        denoised = cv2.fastNlMeansDenoising(gray)
-        _, thresh3 = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # Method 3: Morphological preprocessing + threshold
+        # Remove small noise and enhance text regions
+        kernel_morph = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        morph_open = cv2.morphologyEx(gray, cv2.MORPH_OPEN, kernel_morph, iterations=1)
+        morph_close = cv2.morphologyEx(morph_open, cv2.MORPH_CLOSE, kernel_morph, iterations=1)
+        _, thresh3 = cv2.threshold(morph_close, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         processed_images.append(thresh3)
 
-        # Method 4: Morphological operations
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 1))
-        morph = cv2.morphologyEx(thresh1, cv2.MORPH_CLOSE, kernel)
-        processed_images.append(morph)
+        # Method 4: Contrast enhancement + threshold
+        # Enhance contrast for better text visibility
+        clahe_contrast = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+        contrast_img = clahe_contrast.apply(gray)
+        _, thresh4 = cv2.threshold(contrast_img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        processed_images.append(thresh4)
 
-        # Method 5: Inverted image (sometimes text is white on dark background)
+        # Method 5: Original image with minimal processing (for cases where text is already clear)
+        _, thresh5 = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        processed_images.append(thresh5)
+
+        # Method 6: Inverted for dark text on light background
         inverted = cv2.bitwise_not(thresh1)
         processed_images.append(inverted)
+
+        # Method 7: High contrast for very faint text
+        high_contrast = cv2.convertScaleAbs(gray, alpha=1.5, beta=10)
+        _, thresh7 = cv2.threshold(high_contrast, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        processed_images.append(thresh7)
 
         return processed_images
 
@@ -422,10 +554,10 @@ class TensorFlowModelManager:
             "raw_text": []
         }
 
-        # Combine all OCR text
+        # Combine all OCR text (only high confidence results)
         all_text = ""
         for (bbox, text, confidence) in ocr_results:
-            if confidence > 0.3:  # Lower threshold for better coverage
+            if confidence > 0.5:  # Increased threshold from 0.3 to 0.5 for better accuracy
                 all_text += " " + text
                 values["raw_text"].append({
                     "text": str(text),
@@ -436,93 +568,164 @@ class TensorFlowModelManager:
         all_text = all_text.upper()
         logger.info(f"Raw OCR text: {all_text}")
 
-        # Enhanced patterns for CardioChek Plus segmented display
+        # Enhanced patterns for CardioChek Plus segmented display - more precise matching
         enhanced_patterns = {
             'cholesterol': [
-                r'CHOL\s*(\d+\.?\d*)\s*mg/dL',
-                r'CHOL\s*(\d+\.?\d*)',
-                r'CHOLESTEROL\s*(\d+\.?\d*)',
+                # Standard patterns (most reliable first)
+                r'CHOL\s*[:\-]?\s*(\d+\.?\d*)\s*mg/dL',
+                r'CHOL\s*[:\-]?\s*(\d+\.?\d*)',
+                r'CHOLESTEROL\s*[:\-]?\s*(\d+\.?\d*)',
                 r'(\d+\.?\d*)\s*mg/dL\s*CHOL',
                 r'(\d+\.?\d*)\s*CHOL',
-                # Segmented display specific patterns
-                r'CHOL\s*(\d+)\s*mg/',
+                # More specific patterns for segmented displays
+                r'CHOL\s*(\d+)\s*mg/dL',
                 r'CHOL\s*(\d+)\s*mg',
-                r'CHOL\s*\{(\d+)\}mg/',
-                r'CHOL\s*(\d+)\s*mg/dL'
+                # Only match if we have clear CHOL context
+                r'(?<!\w)CHOL\s*(\d+)(?!\w)',
             ],
             'hdl': [
-                r'HDL\s*CHOL\s*(\d+\.?\d*)\s*mg/dL',
-                r'HDL\s*(\d+\.?\d*)\s*mg/dL',
-                r'HDL\s*CHOL\s*(\d+\.?\d*)',
-                r'HDL\s*(\d+\.?\d*)',
+                r'HDL\s*[:\-]?\s*(\d+\.?\d*)\s*mg/dL',
+                r'HDL\s*[:\-]?\s*(\d+\.?\d*)',
+                r'HDL\s*CHOL\s*[:\-]?\s*(\d+\.?\d*)',
                 r'(\d+\.?\d*)\s*mg/dL\s*HDL',
                 r'(\d+\.?\d*)\s*HDL',
-                # Segmented display specific patterns
-                r'HDL[Ee](\d+)\s*mg/',
-                r'HDL\s*(\d+)\s*mg/',
+                # More specific patterns
+                r'HDL\s*(\d+)\s*mg/dL',
                 r'HDL\s*(\d+)\s*mg',
-                r'HDL\s*CHOL\s*(\d+)\s*mg/dL'
+                # Only match if we have clear HDL context
+                r'(?<!\w)HDL\s*(\d+)(?!\w)',
             ],
             'triglycerides': [
-                r'TRIG\s*(\d+\.?\d*)\s*mg/dL',
-                r'TRIG\s*(\d+\.?\d*)',
-                r'TRIGLYCERIDES\s*(\d+\.?\d*)',
+                r'TRIG\s*[:\-]?\s*(\d+\.?\d*)\s*mg/dL',
+                r'TRIG\s*[:\-]?\s*(\d+\.?\d*)',
+                r'TRIGLYCERIDES\s*[:\-]?\s*(\d+\.?\d*)',
                 r'(\d+\.?\d*)\s*mg/dL\s*TRIG',
                 r'(\d+\.?\d*)\s*TRIG',
-                # Segmented display specific patterns
-                r'TrIc\s*(\d+)\s*mg/',
-                r'TRIG\s*(\d+)\s*mg/',
+                # More specific patterns
+                r'TRIG\s*(\d+)\s*mg/dL',
                 r'TRIG\s*(\d+)\s*mg',
-                r'TRIG\s*(\d+)\s*mg/dL'
+                # Only match if we have clear TRIG context
+                r'(?<!\w)TRIG\s*(\d+)(?!\w)',
             ],
             'glucose': [
-                r'eGLU\s*(\d+\.?\d*)\s*mg/dL',
-                r'eGLU\s*(\d+\.?\d*)',
-                r'GLU\s*(\d+\.?\d*)\s*mg/dL',
-                r'GLU\s*(\d+\.?\d*)',
-                r'GLUCOSE\s*(\d+\.?\d*)',
-                r'(\d+\.?\d*)\s*mg/dL\s*eGLU',
-                r'(\d+\.?\d*)\s*eGLU',
-                # Segmented display specific patterns
-                r'eGLU\s*(\d+)\s*mg/',
-                r'eGLU\s*(\d+)\s*mg',
-                r'GLU\s*(\d+)\s*mg/',
-                r'GLU\s*(\d+)\s*mg'
+                r'e?GLU\s*[:\-]?\s*(\d+\.?\d*)\s*mg/dL',
+                r'e?GLU\s*[:\-]?\s*(\d+\.?\d*)',
+                r'GLUCOSE\s*[:\-]?\s*(\d+\.?\d*)',
+                r'(\d+\.?\d*)\s*mg/dL\s*e?GLU',
+                r'(\d+\.?\d*)\s*e?GLU',
+                # More specific patterns
+                r'e?GLU\s*(\d+)\s*mg/dL',
+                r'e?GLU\s*(\d+)\s*mg',
+                # Only match if we have clear GLU context
+                r'(?<!\w)(?:e?GLU)\s*(\d+)(?!\w)',
             ]
         }
 
-        # Extract values using enhanced patterns
+        # Extract values using enhanced patterns with medical validation
         for key, pattern_list in enhanced_patterns.items():
             for pattern in pattern_list:
                 match = re.search(pattern, all_text)
                 if match:
                     try:
                         value = float(match.group(1))
-                        if 0 < value < 1000:  # Reasonable range
+                        # Medical validation based on parameter type
+                        if self._is_medically_reasonable(key, value):
                             values[key] = int(value) if value.is_integer() else float(value)
-                            logger.info(f"Extracted {key}: {values[key]}")
+                            logger.info(f"Extracted {key}: {values[key]} (medically valid)")
                             break  # Use first valid match
+                        else:
+                            logger.warning(f"Extracted {key}: {value} - medically unreasonable, skipping")
                     except (ValueError, IndexError):
                         continue
 
-        # If no specific values found, try to extract any numbers in order
-        if not any(values[key] for key in ['cholesterol', 'hdl', 'triglycerides', 'glucose']):
+        # If no specific values found, try to extract numbers with better logic
+        # Only run this if pattern matching didn't find any values
+        extracted_count = sum(1 for key in ['cholesterol', 'hdl', 'triglycerides', 'glucose'] if values[key] is not None)
+
+        if extracted_count == 0:
             numbers = re.findall(r'\d+\.?\d*', all_text)
-            if len(numbers) >= 4:
+            logger.info(f"Pattern matching found no values, found {len(numbers)} numbers in text: {numbers}")
+
+            if len(numbers) > 0:
                 try:
-                    values['cholesterol'] = int(float(numbers[0])) if float(numbers[0]).is_integer() else float(numbers[0])
-                    values['hdl'] = int(float(numbers[1])) if float(numbers[1]).is_integer() else float(numbers[1])
-                    values['triglycerides'] = int(float(numbers[2])) if float(numbers[2]).is_integer() else float(numbers[2])
-                    values['glucose'] = int(float(numbers[3])) if float(numbers[3]).is_integer() else float(numbers[3])
-                    logger.info("Assigned numbers based on typical CardioChek Plus order")
-                except (ValueError, IndexError):
-                    pass
+                    # Convert to floats and filter reasonable health reading ranges
+                    valid_numbers = []
+                    for num_str in numbers:
+                        try:
+                            num = float(num_str)
+                            # CardioChek typical ranges:
+                            # Cholesterol: 100-400 mg/dL
+                            # HDL: 20-100 mg/dL
+                            # Triglycerides: 50-500 mg/dL
+                            # Glucose: 50-200 mg/dL
+                            if 20 <= num <= 1000:  # Broad range to catch all
+                                valid_numbers.append(num)
+                        except ValueError:
+                            continue
+
+                    logger.info(f"Valid numbers after filtering: {valid_numbers}")
+
+                    # Smart assignment based on typical CardioChek order and ranges
+                    if len(valid_numbers) >= 2:
+                        # Sort by value to assign appropriately
+                        sorted_nums = sorted(valid_numbers)
+
+                        # Cholesterol is typically highest, triglycerides second highest, glucose lowest
+                        if len(sorted_nums) >= 4:
+                            # Full set: assign in typical order
+                            values['cholesterol'] = sorted_nums[-1]  # Highest (cholesterol)
+                            values['triglycerides'] = sorted_nums[-2]  # Second highest (triglycerides)
+                            values['hdl'] = sorted_nums[0] if sorted_nums[0] < 100 else sorted_nums[1]  # HDL is usually lowest
+                            values['glucose'] = sorted_nums[-3] if len(sorted_nums) > 3 else sorted_nums[1]  # Glucose
+                        elif len(sorted_nums) == 3:
+                            # Three values - assign based on typical relationships
+                            if sorted_nums[0] < 100:  # Likely HDL
+                                values['hdl'] = sorted_nums[0]
+                                values['glucose'] = sorted_nums[1]
+                                values['cholesterol'] = sorted_nums[2]
+                            else:  # HDL missing, assign as glucose/cholesterol/triglycerides
+                                values['glucose'] = sorted_nums[0]
+                                values['cholesterol'] = sorted_nums[1]
+                                values['triglycerides'] = sorted_nums[2]
+                        elif len(sorted_nums) == 2:
+                            # Two values - most likely glucose and cholesterol
+                            values['glucose'] = sorted_nums[0]
+                            values['cholesterol'] = sorted_nums[1]
+
+                        logger.info(f"Smart number assignment: Chol={values.get('cholesterol')}, HDL={values.get('hdl')}, Trig={values.get('triglycerides')}, Glu={values.get('glucose')}")
+
+                except (ValueError, IndexError) as e:
+                    logger.warning(f"Failed to assign numbers: {e}")
+        else:
+            logger.info(f"Pattern matching already found {extracted_count} values, skipping fallback logic")
 
         # Determine units
         if "mmol/L" in all_text or "mmol/l" in all_text:
             values["units"] = "mmol/L"
 
         return values
+
+    def _is_medically_reasonable(self, parameter: str, value: float) -> bool:
+        """Check if extracted value is medically reasonable for the parameter type"""
+        try:
+            # Define medically reasonable ranges for each parameter
+            ranges = {
+                'cholesterol': (50, 600),    # mg/dL - typical range 100-400, but allow wider for edge cases
+                'hdl': (10, 150),           # mg/dL - typical range 20-100
+                'triglycerides': (30, 800), # mg/dL - typical range 50-500
+                'glucose': (30, 400)        # mg/dL - typical range 50-200
+            }
+
+            if parameter in ranges:
+                min_val, max_val = ranges[parameter]
+                if min_val <= value <= max_val:
+                    return True
+                else:
+                    logger.warning(f"Value {value} for {parameter} outside medical range {min_val}-{max_val}")
+                    return False
+            return True  # Allow unknown parameters
+        except (ValueError, TypeError):
+            return False
 
     def _count_extracted_values(self, values: Dict[str, Any]) -> int:
         """Count how many values were successfully extracted"""

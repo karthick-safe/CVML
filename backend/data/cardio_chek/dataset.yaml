@@ -1,6 +1,6 @@
 names:
 - cardio_chek_plus
 nc: 1
-path: data/cardio_chek/yolo
+path: /Users/karthickrajamurugan/Safe/CVML/data/cardio_chek/yolo
 train: images
 val: images
